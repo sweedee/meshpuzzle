@@ -1,9 +1,9 @@
+import './style.css';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { App } from './app';
 import { DragControls } from './controls';
-import { LEVELS } from './levels';
-import type { Game } from './game';
+import { UI } from './ui';
 
 function gridFromUrl(): THREE.Vector3 | undefined {
   // Debug: override the level's grid without a rebuild, e.g. ?grid=3x2x3
@@ -45,36 +45,9 @@ orbit.maxPolarAngle = Math.PI * 0.49;
 orbit.enablePan = false;
 
 const drag = new DragControls(camera, renderer.domElement, orbit);
-
-const app = new App({ scene, camera, orbit, drag, sun, gridOverride: gridFromUrl() });
-
-// --- HUD (placeholder wiring; replaced by the ui module in phase 2) ---
-const countEl = document.querySelector('#count') as HTMLElement;
-const winEl = document.querySelector('#win') as HTMLElement;
-const hintEl = document.querySelector('#hint') as HTMLElement;
-
-app.onLevelLoaded = (g: Game) => {
-  winEl.classList.add('hidden');
-  g.onChange = () => {
-    countEl.textContent = `${g.placed} / ${g.total}`;
-  };
-  g.onWin = () => {
-    winEl.classList.remove('hidden');
-  };
-  g.onChange();
-  window.__game = g;
-};
-app.startLevel(LEVELS[0].id);
-
-document.querySelector('#reset')!.addEventListener('click', () => {
-  winEl.classList.add('hidden');
-  app.game?.reset();
-});
-document.querySelector('#again')!.addEventListener('click', () => {
-  winEl.classList.add('hidden');
-  app.game?.reset();
-});
-setTimeout(() => hintEl.classList.add('faded'), 7000);
+const ui = new UI();
+const app = new App({ scene, camera, orbit, drag, sun, gridOverride: gridFromUrl() }, ui);
+app.showMenu();
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -82,8 +55,9 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-renderer.setAnimationLoop(() => {
+renderer.setAnimationLoop((now) => {
   orbit.update();
+  app.tick(now);
   renderer.render(scene, camera);
 });
 
@@ -91,7 +65,6 @@ renderer.setAnimationLoop(() => {
 declare global {
   interface Window {
     __app: App;
-    __game: Game;
     __camera: THREE.PerspectiveCamera;
     __raycaster: THREE.Raycaster;
     __renderer: THREE.WebGLRenderer;

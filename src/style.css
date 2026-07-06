@@ -64,6 +64,18 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Narrow screens: drop the level-name pill and tighten paddings so the
+   count/timer/moves/reset row always fits. */
+@media (max-width: 560px) {
+  #level-name {
+    display: none;
+  }
+  .pill,
+  #hud button {
+    padding: 7px 9px;
+    font-size: 13.5px;
+  }
+}
 button {
   pointer-events: auto;
   background: var(--panel);

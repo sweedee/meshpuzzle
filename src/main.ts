@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { App } from './app';
 import { DragControls } from './controls';
+import { Effects } from './effects';
+import { updateTweens } from './tween';
 import { UI } from './ui';
 
 function gridFromUrl(): THREE.Vector3 | undefined {
@@ -45,8 +47,9 @@ orbit.maxPolarAngle = Math.PI * 0.49;
 orbit.enablePan = false;
 
 const drag = new DragControls(camera, renderer.domElement, orbit);
+const effects = new Effects(scene);
 const ui = new UI();
-const app = new App({ scene, camera, orbit, drag, sun, gridOverride: gridFromUrl() }, ui);
+const app = new App({ scene, camera, orbit, drag, effects, sun, gridOverride: gridFromUrl() }, ui);
 app.showMenu();
 
 window.addEventListener('resize', () => {
@@ -55,7 +58,12 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+let lastFrame = performance.now();
 renderer.setAnimationLoop((now) => {
+  const dt = Math.min((now - lastFrame) / 1000, 0.1);
+  lastFrame = now;
+  updateTweens(now);
+  effects.update(dt);
   orbit.update();
   app.tick(now);
   renderer.render(scene, camera);

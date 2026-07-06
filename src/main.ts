@@ -2,8 +2,10 @@ import './style.css';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { App } from './app';
+import { SoundFX } from './audio';
 import { DragControls } from './controls';
 import { Effects } from './effects';
+import { getSave } from './save';
 import { updateTweens } from './tween';
 import { UI } from './ui';
 
@@ -48,8 +50,12 @@ orbit.enablePan = false;
 
 const drag = new DragControls(camera, renderer.domElement, orbit);
 const effects = new Effects(scene);
+const audio = new SoundFX(getSave().settings);
 const ui = new UI();
-const app = new App({ scene, camera, orbit, drag, effects, sun, gridOverride: gridFromUrl() }, ui);
+const app = new App(
+  { scene, camera, orbit, drag, effects, audio, sun, gridOverride: gridFromUrl() },
+  ui
+);
 app.showMenu();
 
 window.addEventListener('resize', () => {

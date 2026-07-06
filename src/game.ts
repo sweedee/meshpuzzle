@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { sliceGeometry } from './slicer';
 import { Piece } from './piece';
 import { WORLD_SIZE } from './shapes';
+import { bump, tween, type TweenHandle } from './tween';
 import type { LevelDef } from './levels';
 
 /** How far the lattice floats above the ground. */
@@ -28,6 +29,7 @@ export class Game {
   private readonly ghost: THREE.Mesh;
   private readonly ghostMaterial: THREE.MeshBasicMaterial;
   private readonly lattice: THREE.LineSegments;
+  private readonly tweens: TweenHandle[] = [];
 
   constructor(scene: THREE.Scene, level: LevelDef, gridOverride?: THREE.Vector3) {
     this.scene = scene;
@@ -109,13 +111,18 @@ export class Game {
     return this.pieces.length;
   }
 
-  /** Ring the unsolved pieces around the lattice on the ground. */
-  scatter(): void {
+  /**
+   * Ring the unsolved pieces around the lattice on the ground; when animated
+   * they hop outward from under the lattice with a small stagger.
+   */
+  scatter(animate = false, onComplete?: () => void): void {
     const order = [...this.pieces].sort(() => Math.random() - 0.5);
     const baseRadius = WORLD_SIZE * 0.85 + 1.5;
     const ringCount = Math.max(1, Math.ceil(order.length / PIECES_PER_RING));
     const ringStep = Math.max(this.cellSize.x, this.cellSize.z) * 1.6;
     const perRing = Math.ceil(order.length / ringCount);
+    const origin = new THREE.Vector3(0, this.cellSize.y * 0.5 + 0.02, 0);
+    let pending = order.length;
     order.forEach((piece, n) => {
       const ring = n % ringCount;
       const radius = baseRadius + ring * ringStep;
@@ -125,24 +132,50 @@ export class Game {
         this.cellSize.y * 0.5 + 0.02,
         Math.sin(angle) * radius
       );
+      if (animate) {
+        piece.flyIn(origin, n * 15, () => {
+          if (--pending === 0) onComplete?.();
+        });
+      }
     });
+    if (!animate) onComplete?.();
   }
 
   /** Snap the piece home if it's close enough; returns whether it locked. */
   tryPlace(piece: Piece): boolean {
     if (piece.locked) return false;
     if (piece.position.distanceTo(piece.home) > this.snapDistance) return false;
-    piece.lock();
+    // The win fires when the snap animation of the final piece lands.
+    piece.lock(() => {
+      if (this.placed === this.total) this.onWin();
+    });
     this.onPlace(piece);
     this.onChange();
-    if (this.placed === this.total) this.onWin();
     return true;
   }
 
-  reset(): void {
+  reset(animate = false, onComplete?: () => void): void {
     for (const piece of this.pieces) piece.unlock();
-    this.scatter();
+    this.scatter(animate, onComplete);
     this.onChange();
+  }
+
+  /** Win celebration: ghost glow pulse + bottom-up wave through the pieces. */
+  celebrate(): void {
+    const baseOpacity = 0.09;
+    this.tweens.push(
+      tween({
+        duration: 1100,
+        ease: bump,
+        onUpdate: (t) => {
+          this.ghostMaterial.opacity = baseOpacity + t * 0.14;
+        },
+        onComplete: () => {
+          this.ghostMaterial.opacity = baseOpacity;
+        },
+      })
+    );
+    for (const piece of this.pieces) piece.pulse(250 + piece.cell.y * 110, 0.12);
   }
 
   /** Debug/test helper: place every piece and trigger the win flow. */
@@ -155,6 +188,8 @@ export class Game {
 
   /** Remove everything from the scene and release GPU resources. */
   dispose(): void {
+    for (const t of this.tweens) t.cancel();
+    this.tweens.length = 0;
     this.scene.remove(this.ghost);
     this.ghost.geometry.dispose();
     this.ghostMaterial.dispose();

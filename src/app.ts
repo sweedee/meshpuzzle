@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Game } from './game';
 import type { DragControls } from './controls';
+import type { Effects } from './effects';
 import { LEVELS, levelById, levelIndex, type LevelDef } from './levels';
 import { computeStars, nextStarHint, starThresholds } from './score';
 import { getSave, levelResult, recordResult, resetProgress, updateSettings } from './save';
@@ -14,6 +15,7 @@ export interface AppContext {
   camera: THREE.PerspectiveCamera;
   orbit: OrbitControls;
   drag: DragControls;
+  effects: Effects;
   sun: THREE.DirectionalLight;
   /** Debug ?grid=WxHxD override applied to whichever level loads. */
   gridOverride?: THREE.Vector3;
@@ -100,20 +102,27 @@ export class App {
     this.loadLevel(level);
     this.state = 'playing';
     this.session = { started: false, moves: 0, elapsedMs: 0, runningSince: null };
-    this.ctx.drag.enabled = true;
     this.ctx.orbit.autoRotate = false;
     this.ui.showGame(level);
     this.ui.setCount(this.game!.placed, this.game!.total);
     this.ui.setTimer(0);
     this.ui.setMoves(0);
+    // Input opens up once the scatter-in animation lands.
+    this.ctx.drag.enabled = false;
+    this.game!.scatter(true, () => {
+      if (this.state === 'playing') this.ctx.drag.enabled = true;
+    });
   }
 
   resetLevel(): void {
     if (!this.game || this.state !== 'playing') return;
-    this.game.reset();
     this.session = { started: false, moves: 0, elapsedMs: 0, runningSince: null };
     this.ui.setTimer(0);
     this.ui.setMoves(0);
+    this.ctx.drag.enabled = false;
+    this.game.reset(true, () => {
+      if (this.state === 'playing') this.ctx.drag.enabled = true;
+    });
   }
 
   /** Milliseconds on the level clock (starts at the first grab). */
@@ -163,6 +172,10 @@ export class App {
     this.game = new Game(scene, level, this.ctx.gridOverride);
     this.game.onChange = () => this.ui.setCount(this.game!.placed, this.game!.total);
     this.game.onWin = () => this.handleWin();
+    this.game.onPlace = (piece) => {
+      if (this.state !== 'playing') return;
+      this.ctx.effects.burst(piece.home, level.theme.ghost);
+    };
 
     // Theme the scene.
     (scene.background as THREE.Color).setHex(level.theme.bg);
@@ -183,6 +196,8 @@ export class App {
     this.ctx.orbit.autoRotate = true;
     this.ctx.orbit.autoRotateSpeed = 1.2;
     this.ctx.drag.enabled = false;
+    this.game!.celebrate();
+    this.ctx.effects.confetti(this.game!.latticeCenter, this.level.theme.ghost);
     const timeMs = this.elapsedMs();
     this.ui.setTimer(timeMs);
 

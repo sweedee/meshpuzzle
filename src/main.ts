@@ -1,29 +1,29 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Game } from './game';
+import { App } from './app';
 import { DragControls } from './controls';
+import { LEVELS } from './levels';
+import type { Game } from './game';
 
-const BG = new THREE.Color(0x1a2028);
-
-function gridFromUrl(): THREE.Vector3 {
-  // Tweak difficulty without a rebuild, e.g. ?grid=3x2x3
+function gridFromUrl(): THREE.Vector3 | undefined {
+  // Debug: override the level's grid without a rebuild, e.g. ?grid=3x2x3
   const m = new URLSearchParams(location.search).get('grid')?.match(/^(\d+)x(\d+)x(\d+)$/);
-  if (!m) return new THREE.Vector3(4, 3, 3);
+  if (!m) return undefined;
   const clamp = (v: string) => THREE.MathUtils.clamp(parseInt(v, 10), 1, 8);
   return new THREE.Vector3(clamp(m[1]), clamp(m[2]), clamp(m[3]));
 }
 
-const app = document.querySelector('#app') as HTMLElement;
+const appEl = document.querySelector('#app') as HTMLElement;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-app.appendChild(renderer.domElement);
+appEl.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = BG;
-scene.fog = new THREE.Fog(BG, 30, 60);
+scene.background = new THREE.Color(0x1a2028);
+scene.fog = new THREE.Fog(0x1a2028, 30, 60);
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(11, 9, 14);
@@ -36,10 +36,7 @@ scene.add(sun);
 const ground = new THREE.GridHelper(60, 60, 0x33414f, 0x242e3a);
 scene.add(ground);
 
-const game = new Game(scene, gridFromUrl());
-
 const orbit = new OrbitControls(camera, renderer.domElement);
-orbit.target.copy(game.latticeCenter);
 orbit.enableDamping = true;
 orbit.dampingFactor = 0.08;
 orbit.minDistance = 6;
@@ -47,28 +44,35 @@ orbit.maxDistance = 35;
 orbit.maxPolarAngle = Math.PI * 0.49;
 orbit.enablePan = false;
 
-new DragControls(camera, renderer.domElement, orbit, game);
+const drag = new DragControls(camera, renderer.domElement, orbit);
 
-// --- HUD ---
+const app = new App({ scene, camera, orbit, drag, sun, gridOverride: gridFromUrl() });
+
+// --- HUD (placeholder wiring; replaced by the ui module in phase 2) ---
 const countEl = document.querySelector('#count') as HTMLElement;
 const winEl = document.querySelector('#win') as HTMLElement;
 const hintEl = document.querySelector('#hint') as HTMLElement;
 
-game.onChange = () => {
-  countEl.textContent = `${game.placed} / ${game.total}`;
+app.onLevelLoaded = (g: Game) => {
+  winEl.classList.add('hidden');
+  g.onChange = () => {
+    countEl.textContent = `${g.placed} / ${g.total}`;
+  };
+  g.onWin = () => {
+    winEl.classList.remove('hidden');
+  };
+  g.onChange();
+  window.__game = g;
 };
-game.onWin = () => {
-  winEl.classList.remove('hidden');
-};
-game.onChange();
+app.startLevel(LEVELS[0].id);
 
 document.querySelector('#reset')!.addEventListener('click', () => {
   winEl.classList.add('hidden');
-  game.reset();
+  app.game?.reset();
 });
 document.querySelector('#again')!.addEventListener('click', () => {
   winEl.classList.add('hidden');
-  game.reset();
+  app.game?.reset();
 });
 setTimeout(() => hintEl.classList.add('faded'), 7000);
 
@@ -86,11 +90,14 @@ renderer.setAnimationLoop(() => {
 // Debug/test hooks.
 declare global {
   interface Window {
+    __app: App;
     __game: Game;
     __camera: THREE.PerspectiveCamera;
     __raycaster: THREE.Raycaster;
+    __renderer: THREE.WebGLRenderer;
   }
 }
-window.__game = game;
+window.__app = app;
 window.__camera = camera;
 window.__raycaster = new THREE.Raycaster();
+window.__renderer = renderer;

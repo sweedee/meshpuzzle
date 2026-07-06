@@ -9,6 +9,15 @@ import type { Piece } from './piece';
  * stop propagation while dragging so OrbitControls never sees those events.
  */
 export class DragControls {
+  /** Gate input during scatter animations and menu screens. */
+  enabled = true;
+
+  /** Fired when a piece is picked up (starts the level timer, audio). */
+  onGrab: (piece: Piece) => void = () => {};
+  /** Fired when a drag ends; `placed` tells whether the piece snapped home. */
+  onRelease: (piece: Piece, placed: boolean) => void = () => {};
+
+  private game: Game | null = null;
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
   private readonly dragPlane = new THREE.Plane();
@@ -20,13 +29,26 @@ export class DragControls {
   constructor(
     private readonly camera: THREE.PerspectiveCamera,
     private readonly dom: HTMLElement,
-    private readonly orbit: OrbitControls,
-    private readonly game: Game
+    private readonly orbit: OrbitControls
   ) {
     dom.addEventListener('pointerdown', this.onDown, { capture: true });
     dom.addEventListener('pointermove', this.onMove, { capture: true });
     dom.addEventListener('pointerup', this.onUp, { capture: true });
     dom.addEventListener('pointercancel', this.onUp, { capture: true });
+  }
+
+  /** Swap the active game (or null between levels). Drops any active drag. */
+  setGame(game: Game | null): void {
+    this.cancelDrag();
+    this.game = game;
+  }
+
+  private cancelDrag(): void {
+    if (!this.dragging) return;
+    this.dragging.setHighlight(false);
+    this.dragging = null;
+    this.pointerId = -1;
+    this.orbit.enabled = true;
   }
 
   private updatePointer(e: PointerEvent): void {
@@ -39,7 +61,7 @@ export class DragControls {
   }
 
   private onDown = (e: PointerEvent): void => {
-    if (this.dragging || !e.isPrimary) return;
+    if (!this.enabled || !this.game || this.dragging || !e.isPrimary) return;
     this.updatePointer(e);
 
     const colliders = this.game.pieces.filter((p) => !p.locked).map((p) => p.collider);
@@ -61,10 +83,11 @@ export class DragControls {
       this.grabOffset.set(0, 0, 0);
     }
     this.dragging.setHighlight(true);
+    this.onGrab(this.dragging);
   };
 
   private onMove = (e: PointerEvent): void => {
-    if (!this.dragging || e.pointerId !== this.pointerId) return;
+    if (!this.dragging || !this.game || e.pointerId !== this.pointerId) return;
     e.stopImmediatePropagation();
     this.updatePointer(e);
 
@@ -91,6 +114,15 @@ export class DragControls {
     this.orbit.enabled = true;
     this.dom.releasePointerCapture(e.pointerId);
     piece.setHighlight(false);
-    this.game.tryPlace(piece);
+    const placed = this.game ? this.game.tryPlace(piece) : false;
+    this.onRelease(piece, placed);
   };
+
+  dispose(): void {
+    this.cancelDrag();
+    this.dom.removeEventListener('pointerdown', this.onDown, { capture: true });
+    this.dom.removeEventListener('pointermove', this.onMove, { capture: true });
+    this.dom.removeEventListener('pointerup', this.onUp, { capture: true });
+    this.dom.removeEventListener('pointercancel', this.onUp, { capture: true });
+  }
 }

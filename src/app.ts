@@ -3,6 +3,8 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js
 import { Game } from './game';
 import type { DragControls } from './controls';
 import { LEVELS, levelById, levelIndex, type LevelDef } from './levels';
+import { computeStars, nextStarHint, starThresholds } from './score';
+import { getSave, levelResult, recordResult, resetProgress, updateSettings } from './save';
 import type { UI, TileInfo } from './ui';
 
 export type ScreenState = 'menu' | 'playing' | 'won';
@@ -47,6 +49,13 @@ export class App {
       const next = this.level && LEVELS[levelIndex(this.level.id) + 1];
       if (next) this.startLevel(next.id);
     };
+    ui.onSettingsChange = (s) => updateSettings(s);
+    ui.onResetProgress = () => {
+      if (!window.confirm('Wipe all level progress and best scores?')) return;
+      resetProgress();
+      if (this.state === 'menu') this.ui.showMenu(this.menuTiles());
+    };
+    ui.setSettings(getSave().settings);
 
     ctx.drag.onGrab = () => {
       if (this.state !== 'playing') return;
@@ -129,8 +138,19 @@ export class App {
   }
 
   private menuTiles(): TileInfo[] {
-    // Progression/stars arrive with the save system; everything open for now.
-    return LEVELS.map((level) => ({ level, locked: false, stars: 0, completed: false }));
+    // Level i unlocks once level i-1 is completed.
+    let prevCompleted = true;
+    return LEVELS.map((level) => {
+      const result = levelResult(level.id);
+      const locked = !prevCompleted;
+      prevCompleted = result?.completed ?? false;
+      return {
+        level,
+        locked,
+        stars: result?.stars ?? 0,
+        completed: result?.completed ?? false,
+      };
+    });
   }
 
   private loadLevel(level: LevelDef): void {
@@ -165,9 +185,22 @@ export class App {
     this.ctx.drag.enabled = false;
     const timeMs = this.elapsedMs();
     this.ui.setTimer(timeMs);
+
+    const moves = this.session.moves;
+    const t = starThresholds(this.level, this.game!.total);
+    const stars = computeStars(t, timeMs, moves);
+    const { improved, prev } = recordResult(this.level.id, { timeMs, moves, stars });
+
+    const sub: string[] = [];
+    if (improved && prev) sub.push('New best!');
+    const hint = nextStarHint(t, stars);
+    if (hint) sub.push(hint);
+
     this.ui.showWin({
+      stars,
       timeMs,
-      moves: this.session.moves,
+      moves,
+      sub: sub.join(' · ') || undefined,
       hasNext: levelIndex(this.level.id) < LEVELS.length - 1,
     });
   }

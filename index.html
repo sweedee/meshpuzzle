@@ -11,120 +11,59 @@
       rel="icon"
       href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🫖</text></svg>"
     />
-    <style>
-      :root {
-        color-scheme: dark;
-      }
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background: #1a2028;
-        font-family: system-ui, -apple-system, sans-serif;
-        color: #e8e4dd;
-        -webkit-user-select: none;
-        user-select: none;
-      }
-      #app {
-        position: fixed;
-        inset: 0;
-      }
-      #app canvas {
-        display: block;
-        touch-action: none;
-      }
-      #hud {
-        position: fixed;
-        top: max(12px, env(safe-area-inset-top));
-        left: max(12px, env(safe-area-inset-left));
-        right: max(12px, env(safe-area-inset-right));
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        pointer-events: none;
-      }
-      #count {
-        background: rgba(15, 20, 27, 0.65);
-        backdrop-filter: blur(6px);
-        border-radius: 10px;
-        padding: 8px 14px;
-        font-size: 15px;
-        font-variant-numeric: tabular-nums;
-      }
-      button {
-        pointer-events: auto;
-        background: rgba(15, 20, 27, 0.65);
-        backdrop-filter: blur(6px);
-        color: #e8e4dd;
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 10px;
-        padding: 8px 14px;
-        font-size: 15px;
-        cursor: pointer;
-      }
-      button:active {
-        background: rgba(80, 110, 150, 0.5);
-      }
-      #hint {
-        position: fixed;
-        bottom: max(18px, env(safe-area-inset-bottom));
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(15, 20, 27, 0.65);
-        backdrop-filter: blur(6px);
-        border-radius: 10px;
-        padding: 8px 14px;
-        font-size: 13px;
-        white-space: nowrap;
-        pointer-events: none;
-        transition: opacity 1s ease;
-      }
-      #hint.faded {
-        opacity: 0;
-      }
-      #win {
-        position: fixed;
-        inset: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 18px;
-        align-items: center;
-        justify-content: center;
-        background: rgba(10, 14, 19, 0.75);
-        backdrop-filter: blur(4px);
-        z-index: 10;
-      }
-      #win.hidden {
-        display: none;
-      }
-      #win h1 {
-        font-size: 34px;
-        font-weight: 700;
-      }
-      #win button {
-        font-size: 17px;
-        padding: 12px 22px;
-        background: rgba(60, 130, 90, 0.5);
-      }
-    </style>
   </head>
   <body>
     <div id="app"></div>
-    <div id="hud">
-      <span id="count">0 / 0</span>
-      <button id="reset">Reset</button>
+
+    <div id="hud" class="hidden">
+      <div class="hud-group">
+        <button id="menu-btn" title="Levels">☰</button>
+        <span id="level-name" class="pill"></span>
+      </div>
+      <div class="hud-group">
+        <span id="count" class="pill">0 / 0</span>
+        <span id="timer" class="pill">0:00</span>
+        <span id="moves" class="pill" title="Moves">0 ↔</span>
+        <button id="reset">Reset</button>
+      </div>
     </div>
-    <div id="hint">Drag the pieces into the ghost teapot · drag empty space to orbit</div>
-    <div id="win" class="hidden">
-      <h1>Solved! 🫖</h1>
-      <button id="again">Play again</button>
+    <div id="hint" class="hidden"></div>
+
+    <div id="menu" class="screen">
+      <h1>Mesh Puzzle</h1>
+      <p class="subtitle">Reassemble the sliced shapes</p>
+      <div id="level-grid"></div>
+      <button id="settings-btn">Settings</button>
     </div>
+
+    <div id="settings" class="screen hidden">
+      <div class="panel">
+        <h1 style="font-size: 22px">Settings</h1>
+        <label class="setting-row">
+          <span>Sound effects</span>
+          <input type="checkbox" id="opt-sfx" checked />
+        </label>
+        <label class="setting-row">
+          <span>Ambient sound</span>
+          <input type="checkbox" id="opt-ambient" />
+        </label>
+        <button id="reset-progress" class="danger">Reset progress</button>
+        <button id="settings-close" class="primary">Done</button>
+      </div>
+    </div>
+
+    <div id="win" class="screen hidden">
+      <h1 id="win-title">Solved!</h1>
+      <div id="stars" class="hidden"></div>
+      <div id="win-stats"></div>
+      <div id="win-sub"></div>
+      <div class="row">
+        <button id="win-levels">Levels</button>
+        <button id="win-replay">Replay</button>
+        <button id="win-next" class="primary">Next →</button>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

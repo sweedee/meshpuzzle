@@ -37,7 +37,8 @@ const sun = new THREE.DirectionalLight(0xfff2e0, 1.8);
 sun.position.set(6, 12, 5);
 scene.add(sun);
 
-const ground = new THREE.GridHelper(60, 60, 0x33414f, 0x242e3a);
+// Neutral greys so the ground grid sits well under every level theme.
+const ground = new THREE.GridHelper(60, 60, 0x3a3f46, 0x26292e);
 scene.add(ground);
 
 const orbit = new OrbitControls(camera, renderer.domElement);

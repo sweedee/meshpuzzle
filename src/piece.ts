@@ -1,8 +1,6 @@
 import * as THREE from 'three';
 import type { SlicedPiece } from './slicer';
 
-const BASE_COLOR = new THREE.Color(0xd9d0c7);
-const LOCKED_COLOR = new THREE.Color(0xcfc6bd);
 const FLASH_COLOR = new THREE.Color(0x2fae5e);
 
 export class Piece extends THREE.Group {
@@ -15,15 +13,25 @@ export class Piece extends THREE.Group {
   locked = false;
 
   private readonly material: THREE.MeshStandardMaterial;
+  private readonly colliderMaterial: THREE.MeshBasicMaterial;
+  private readonly baseColor: THREE.Color;
+  private readonly lockedColor: THREE.Color;
   private flashTimer = 0;
 
-  constructor(sliced: SlicedPiece, cellSize: THREE.Vector3, home: THREE.Vector3) {
+  constructor(
+    sliced: SlicedPiece,
+    cellSize: THREE.Vector3,
+    home: THREE.Vector3,
+    colors: { base: number; locked: number }
+  ) {
     super();
     this.home = home.clone();
     this.cell = sliced.cell.clone();
+    this.baseColor = new THREE.Color(colors.base);
+    this.lockedColor = new THREE.Color(colors.locked);
 
     this.material = new THREE.MeshStandardMaterial({
-      color: BASE_COLOR,
+      color: this.baseColor,
       roughness: 0.55,
       metalness: 0.05,
       flatShading: true,
@@ -32,9 +40,10 @@ export class Piece extends THREE.Group {
     this.mesh = new THREE.Mesh(sliced.geometry, this.material);
     this.add(this.mesh);
 
+    this.colliderMaterial = new THREE.MeshBasicMaterial({ visible: false });
     this.collider = new THREE.Mesh(
       new THREE.BoxGeometry(cellSize.x, cellSize.y, cellSize.z),
-      new THREE.MeshBasicMaterial({ visible: false })
+      this.colliderMaterial
     );
     this.collider.userData.piece = this;
     this.add(this.collider);
@@ -50,13 +59,21 @@ export class Piece extends THREE.Group {
     this.setHighlight(false);
     this.material.color.copy(FLASH_COLOR);
     window.clearTimeout(this.flashTimer);
-    this.flashTimer = window.setTimeout(() => this.material.color.copy(LOCKED_COLOR), 450);
+    this.flashTimer = window.setTimeout(() => this.material.color.copy(this.lockedColor), 450);
   }
 
   unlock(): void {
     this.locked = false;
     window.clearTimeout(this.flashTimer);
-    this.material.color.copy(BASE_COLOR);
+    this.material.color.copy(this.baseColor);
     this.setHighlight(false);
+  }
+
+  dispose(): void {
+    window.clearTimeout(this.flashTimer);
+    this.mesh.geometry.dispose();
+    this.material.dispose();
+    this.collider.geometry.dispose();
+    this.colliderMaterial.dispose();
   }
 }

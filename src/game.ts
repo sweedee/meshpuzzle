@@ -1,41 +1,43 @@
 import * as THREE from 'three';
-import { TeapotGeometry } from 'three/examples/jsm/geometries/TeapotGeometry.js';
 import { sliceGeometry } from './slicer';
 import { Piece } from './piece';
+import { WORLD_SIZE } from './shapes';
+import type { LevelDef } from './levels';
 
-/** Largest dimension of the puzzle mesh in world units. */
-const WORLD_SIZE = 7;
 /** How far the lattice floats above the ground. */
 const LATTICE_LIFT = 1.2;
+/** Roughly how many pieces fit on one scatter ring before it gets crowded. */
+const PIECES_PER_RING = 22;
 
 export class Game {
+  readonly level: LevelDef;
   readonly pieces: Piece[] = [];
   readonly latticeCenter = new THREE.Vector3();
   readonly cellSize: THREE.Vector3;
   /** Pieces snap home when released within this distance of their cell. */
   readonly snapDistance: number;
+  /** Outer radius of the scatter rings (for camera limits). */
+  readonly scatterRadius: number;
 
   onChange: () => void = () => {};
   onWin: () => void = () => {};
+  /** Fired for every successful placement (audio/particles hook). */
+  onPlace: (piece: Piece) => void = () => {};
 
   private readonly scene: THREE.Scene;
+  private readonly ghost: THREE.Mesh;
+  private readonly ghostMaterial: THREE.MeshBasicMaterial;
+  private readonly lattice: THREE.LineSegments;
 
-  constructor(scene: THREE.Scene, dims: THREE.Vector3) {
+  constructor(scene: THREE.Scene, level: LevelDef, gridOverride?: THREE.Vector3) {
     this.scene = scene;
+    this.level = level;
 
-    const teapot = new TeapotGeometry(1, 8);
-    teapot.deleteAttribute('uv');
-    teapot.deleteAttribute('normal');
+    // Factories return ready-to-slice geometry (upright, WORLD_SIZE across).
+    const geometry = level.makeGeometry();
+    const dims = gridOverride ?? level.dims;
 
-    // Normalize so the puzzle is always WORLD_SIZE across, whatever the mesh.
-    const bounds = new THREE.Box3().setFromBufferAttribute(
-      teapot.getAttribute('position') as THREE.BufferAttribute
-    );
-    const size = bounds.getSize(new THREE.Vector3());
-    const scale = WORLD_SIZE / Math.max(size.x, size.y, size.z);
-    teapot.scale(scale, scale, scale);
-
-    const sliced = sliceGeometry(teapot, dims);
+    const sliced = sliceGeometry(geometry, dims);
     this.cellSize = sliced.cellSize;
     this.snapDistance = Math.min(this.cellSize.x, this.cellSize.y, this.cellSize.z) * 0.55;
 
@@ -44,20 +46,18 @@ export class Game {
     const offset = new THREE.Vector3(-center.x, -sliced.box.min.y + LATTICE_LIFT, -center.z);
     this.latticeCenter.copy(center).add(offset);
 
-    // Faint ghost of the finished teapot as the build target.
-    const ghost = new THREE.Mesh(
-      teapot,
-      new THREE.MeshBasicMaterial({
-        color: 0x9cc3e8,
-        transparent: true,
-        opacity: 0.09,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      })
-    );
-    ghost.position.copy(offset);
-    ghost.renderOrder = -1;
-    scene.add(ghost);
+    // Faint ghost of the finished shape as the build target.
+    this.ghostMaterial = new THREE.MeshBasicMaterial({
+      color: level.theme.ghost,
+      transparent: true,
+      opacity: 0.09,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this.ghost = new THREE.Mesh(geometry, this.ghostMaterial);
+    this.ghost.position.copy(offset);
+    this.ghost.renderOrder = -1;
+    scene.add(this.ghost);
 
     // Wireframe edges of every occupied cell — the blocky silhouette to fill.
     const edgePositions: number[] = [];
@@ -79,18 +79,25 @@ export class Game {
     }
     const latticeGeo = new THREE.BufferGeometry();
     latticeGeo.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
-    scene.add(
-      new THREE.LineSegments(
-        latticeGeo,
-        new THREE.LineBasicMaterial({ color: 0x5f88ad, transparent: true, opacity: 0.28 })
-      )
+    this.lattice = new THREE.LineSegments(
+      latticeGeo,
+      new THREE.LineBasicMaterial({ color: level.theme.lattice, transparent: true, opacity: 0.28 })
     );
+    scene.add(this.lattice);
 
     for (const p of sliced.pieces) {
-      const piece = new Piece(p, this.cellSize, p.center.clone().add(offset));
+      const piece = new Piece(p, this.cellSize, p.center.clone().add(offset), {
+        base: level.theme.pieceBase,
+        locked: level.theme.pieceLocked,
+      });
       this.pieces.push(piece);
       scene.add(piece);
     }
+
+    const ringCount = Math.max(1, Math.ceil(this.pieces.length / PIECES_PER_RING));
+    const ringStep = Math.max(this.cellSize.x, this.cellSize.z) * 1.6;
+    this.scatterRadius = WORLD_SIZE * 0.85 + 1.5 + (ringCount - 1) * ringStep;
+
     this.scatter();
   }
 
@@ -106,13 +113,13 @@ export class Game {
   scatter(): void {
     const order = [...this.pieces].sort(() => Math.random() - 0.5);
     const baseRadius = WORLD_SIZE * 0.85 + 1.5;
-    const step = Math.max(this.cellSize.x, this.cellSize.z) * 1.25;
+    const ringCount = Math.max(1, Math.ceil(order.length / PIECES_PER_RING));
+    const ringStep = Math.max(this.cellSize.x, this.cellSize.z) * 1.6;
+    const perRing = Math.ceil(order.length / ringCount);
     order.forEach((piece, n) => {
-      // Alternate between two rings so pieces don't crowd each other.
-      const ring = n % 2;
-      const radius = baseRadius + ring * step * 1.4;
-      const count = Math.ceil(order.length / 2);
-      const angle = ((Math.floor(n / 2) + ring * 0.5) / count) * Math.PI * 2;
+      const ring = n % ringCount;
+      const radius = baseRadius + ring * ringStep;
+      const angle = ((Math.floor(n / ringCount) + ring / ringCount) / perRing) * Math.PI * 2;
       piece.position.set(
         Math.cos(angle) * radius,
         this.cellSize.y * 0.5 + 0.02,
@@ -126,6 +133,7 @@ export class Game {
     if (piece.locked) return false;
     if (piece.position.distanceTo(piece.home) > this.snapDistance) return false;
     piece.lock();
+    this.onPlace(piece);
     this.onChange();
     if (this.placed === this.total) this.onWin();
     return true;
@@ -145,7 +153,18 @@ export class Game {
     }
   }
 
+  /** Remove everything from the scene and release GPU resources. */
   dispose(): void {
-    for (const piece of this.pieces) this.scene.remove(piece);
+    this.scene.remove(this.ghost);
+    this.ghost.geometry.dispose();
+    this.ghostMaterial.dispose();
+    this.scene.remove(this.lattice);
+    this.lattice.geometry.dispose();
+    (this.lattice.material as THREE.Material).dispose();
+    for (const piece of this.pieces) {
+      this.scene.remove(piece);
+      piece.dispose();
+    }
+    this.pieces.length = 0;
   }
 }

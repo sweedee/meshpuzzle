@@ -3,6 +3,7 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js
 import { Game } from './game';
 import type { DragControls } from './controls';
 import type { Effects } from './effects';
+import type { SoundFX } from './audio';
 import { LEVELS, levelById, levelIndex, type LevelDef } from './levels';
 import { computeStars, nextStarHint, starThresholds } from './score';
 import { getSave, levelResult, recordResult, resetProgress, updateSettings } from './save';
@@ -16,6 +17,7 @@ export interface AppContext {
   orbit: OrbitControls;
   drag: DragControls;
   effects: Effects;
+  audio: SoundFX;
   sun: THREE.DirectionalLight;
   /** Debug ?grid=WxHxD override applied to whichever level loads. */
   gridOverride?: THREE.Vector3;
@@ -51,7 +53,12 @@ export class App {
       const next = this.level && LEVELS[levelIndex(this.level.id) + 1];
       if (next) this.startLevel(next.id);
     };
-    ui.onSettingsChange = (s) => updateSettings(s);
+    ui.onTap = () => ctx.audio.tap();
+    ui.onSettingsChange = (s) => {
+      updateSettings(s);
+      ctx.audio.setSfx(s.sfx);
+      ctx.audio.setAmbient(s.ambient);
+    };
     ui.onResetProgress = () => {
       if (!window.confirm('Wipe all level progress and best scores?')) return;
       resetProgress();
@@ -61,11 +68,13 @@ export class App {
 
     ctx.drag.onGrab = () => {
       if (this.state !== 'playing') return;
+      ctx.audio.grab();
       this.session.started = true;
       if (this.session.runningSince === null) this.session.runningSince = performance.now();
     };
-    ctx.drag.onRelease = () => {
+    ctx.drag.onRelease = (_piece, placed) => {
       if (this.state !== 'playing') return;
+      if (!placed) ctx.audio.deny();
       this.session.moves++;
       this.ui.setMoves(this.session.moves);
     };
@@ -175,6 +184,7 @@ export class App {
     this.game.onPlace = (piece) => {
       if (this.state !== 'playing') return;
       this.ctx.effects.burst(piece.home, level.theme.ghost);
+      this.ctx.audio.snap();
     };
 
     // Theme the scene.
@@ -198,6 +208,7 @@ export class App {
     this.ctx.drag.enabled = false;
     this.game!.celebrate();
     this.ctx.effects.confetti(this.game!.latticeCenter, this.level.theme.ghost);
+    this.ctx.audio.fanfare();
     const timeMs = this.elapsedMs();
     this.ui.setTimer(timeMs);
 
@@ -205,6 +216,11 @@ export class App {
     const t = starThresholds(this.level, this.game!.total);
     const stars = computeStars(t, timeMs, moves);
     const { improved, prev } = recordResult(this.level.id, { timeMs, moves, stars });
+
+    // Star chimes timed to the CSS pop-in animation.
+    for (let i = 1; i <= stars; i++) {
+      window.setTimeout(() => this.ctx.audio.star(i), 240 + i * 260);
+    }
 
     const sub: string[] = [];
     if (improved && prev) sub.push('New best!');
